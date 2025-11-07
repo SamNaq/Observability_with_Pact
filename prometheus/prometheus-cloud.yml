@@ -1,0 +1,37 @@
+global:
+  scrape_interval: 15s
+  external_labels:
+    cluster: demo-observability
+    environment: development
+scrape_configs:
+  - job_name: user-consumer
+    scrape_interval: 10s
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - localhost:3000
+        labels:
+          service: user-consumer
+          type: api
+  - job_name: user-provider
+    scrape_interval: 10s
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - localhost:3001
+        labels:
+          service: user-provider
+          type: api
+remote_write:
+  # Grafana Cloud Prometheus remote write endpoint
+  # Using Instance ID as username and Grafana Cloud token as password
+  # Note: Prometheus remote_write uses /push endpoint automatically
+  - url: https://prometheus-prod-13-prod-us-east-0.grafana.net/api/prom/push
+    basic_auth:
+      username: '${GRAFANA_CLOUD_USERNAME}'  # Instance ID or service account username
+      password: '${GRAFANA_CLOUD_API_TOKEN}'  # Grafana Cloud API token for Prometheus remote write
+    write_relabel_configs:
+      - source_labels:
+          - __name__
+        regex: .*
+        action: keep

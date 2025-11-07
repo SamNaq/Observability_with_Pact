@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.log
+.env
+.env.cloud
+.DS_Store
+pact_contract/
+coverage/
+.pact/
+.mcp-config.json
+data/

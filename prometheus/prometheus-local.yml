@@ -1,0 +1,35 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'demo-observability'
+    environment: 'local'
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Consumer Service
+  - job_name: 'user-consumer'
+    scrape_interval: 10s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['localhost:3000']
+        labels:
+          service: 'user-consumer'
+          type: 'api'
+
+  # Provider Service
+  - job_name: 'user-provider'
+    scrape_interval: 10s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['localhost:3001']
+        labels:
+          service: 'user-provider'
+          type: 'api'
+
+
+

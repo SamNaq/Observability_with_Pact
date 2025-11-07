@@ -1,0 +1,38 @@
+name: Contract Test Automation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  contract-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Pact consumer tests
+        run: npm run test:consumer
+
+      - name: Run Pact provider verification
+        run: npm run test:provider
+
+      - name: Upload generated Pact contracts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: pact-contracts
+          path: pact_contract/**/*.json
+
