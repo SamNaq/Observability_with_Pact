@@ -7,5 +7,13 @@ dist/
 pact_contract/
 coverage/
 .pact/
+coverage/
+.coverage/
+*.coverage
+.nyc_output/
+tmp/
+logs/
+*.tmp
+*.local
 .mcp-config.json
 data/
