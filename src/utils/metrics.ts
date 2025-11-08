@@ -44,6 +44,13 @@ export const pactContractPublished = new Counter({
   labelNames: ['consumer', 'provider', 'version'],
 });
 
+// Automated Test Metrics
+export const testRunsTotal = new Counter({
+  name: 'test_runs_total',
+  help: 'Total number of automated test executions by suite/status',
+  labelNames: ['suite', 'status'],
+});
+
 // API Business Metrics
 export const userOperationsTotal = new Counter({
   name: 'user_operations_total',
@@ -56,14 +63,22 @@ export const activeConnections = new Gauge({
   help: 'Number of active connections',
 });
 
+export const testCoveragePercent = new Gauge({
+  name: 'test_coverage_percent',
+  help: 'Code coverage percentage by suite and metric',
+  labelNames: ['suite', 'metric'],
+});
+
 // Register all metrics
 register.registerMetric(httpRequestDuration);
 register.registerMetric(httpRequestTotal);
 register.registerMetric(pactTestTotal);
 register.registerMetric(pactTestDuration);
 register.registerMetric(pactContractPublished);
+register.registerMetric(testRunsTotal);
 register.registerMetric(userOperationsTotal);
 register.registerMetric(activeConnections);
+register.registerMetric(testCoveragePercent);
 
 logger.info('Prometheus metrics initialized');
 

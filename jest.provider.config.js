@@ -3,6 +3,9 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests/provider'],
   testMatch: ['**/*.test.ts'],
+  collectCoverage: true,
+  coverageReporters: ['json-summary', 'text'],
+  coverageDirectory: '<rootDir>/coverage/provider',
   collectCoverageFrom: [
     'provider/**/*.ts',
     '!**/*.d.ts',

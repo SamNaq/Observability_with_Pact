@@ -1,5 +1,4 @@
 import { Pact, Matchers } from '@pact-foundation/pact';
-import { pactTestTotal, pactTestDuration } from '../../src/utils/metrics';
 import { logger } from '../../src/utils/logger';
 import axios, { AxiosInstance } from 'axios';
 import path from 'path';
@@ -16,6 +15,31 @@ const provider = new Pact({
 
 describe('User API Consumer Tests', () => {
   let client: AxiosInstance;
+  const metricsEndpoint =
+    process.env.PACT_METRICS_URL || 'http://localhost:3001/internal/metrics/pact-tests';
+
+  async function recordPactMetric(
+    status: 'success' | 'failure',
+    durationSeconds?: number
+  ): Promise<void> {
+    try {
+      await axios.post(
+        metricsEndpoint,
+        {
+          testType: 'consumer',
+          status,
+          consumer: 'user-consumer',
+          provider: 'user-provider',
+          durationSeconds,
+        },
+        { timeout: 2000 }
+      );
+    } catch (error: any) {
+      logger.warn('Unable to record consumer pact metric', {
+        error: error?.message || String(error),
+      });
+    }
+  }
 
   beforeAll(() => provider.setup());
   afterEach(() => provider.verify());
@@ -88,35 +112,16 @@ describe('User API Consumer Tests', () => {
         expect(response.data[0]).toHaveProperty('email');
         expect(response.data[0]).toHaveProperty('createdAt');
 
-        // Record metrics
-        pactTestTotal.inc({
-          test_type: 'consumer',
-          status: 'success',
-          consumer: 'user-consumer',
-          provider: 'user-provider',
-        });
-        pactTestDuration.observe(
-          {
-            test_type: 'consumer',
-            consumer: 'user-consumer',
-            provider: 'user-provider',
-          },
-          duration
-        );
+        await recordPactMetric('success', duration);
 
         logger.info('Consumer test passed: GET /api/users', {
           duration: `${duration.toFixed(3)}s`,
           status: 'success',
         });
       } catch (error: any) {
-        pactTestTotal.inc({
-          test_type: 'consumer',
-          status: 'failure',
-          consumer: 'user-consumer',
-          provider: 'user-provider',
-        });
+        await recordPactMetric('failure');
         logger.error('Consumer test failed: GET /api/users', {
-          error: error.message,
+          error: error?.message || String(error),
         });
         throw error;
       }
@@ -170,20 +175,7 @@ describe('User API Consumer Tests', () => {
         expect(typeof response.data.createdAt).toBe('string');
         expect(() => new Date(response.data.createdAt)).not.toThrow();
 
-        pactTestTotal.inc({
-          test_type: 'consumer',
-          status: 'success',
-          consumer: 'user-consumer',
-          provider: 'user-provider',
-        });
-        pactTestDuration.observe(
-          {
-            test_type: 'consumer',
-            consumer: 'user-consumer',
-            provider: 'user-provider',
-          },
-          duration
-        );
+        await recordPactMetric('success', duration);
 
         logger.info('Consumer test passed: GET /api/users/:id', {
           duration: `${duration.toFixed(3)}s`,
@@ -191,14 +183,9 @@ describe('User API Consumer Tests', () => {
           status: 'success',
         });
       } catch (error: any) {
-        pactTestTotal.inc({
-          test_type: 'consumer',
-          status: 'failure',
-          consumer: 'user-consumer',
-          provider: 'user-provider',
-        });
+        await recordPactMetric('failure');
         logger.error('Consumer test failed: GET /api/users/:id', {
-          error: error.message,
+          error: error?.message || String(error),
         });
         throw error;
       }
@@ -233,20 +220,7 @@ describe('User API Consumer Tests', () => {
       expect(response.status).toBe(404);
       expect(response.data.error).toBe('User not found');
 
-      pactTestTotal.inc({
-        test_type: 'consumer',
-        status: 'success',
-        consumer: 'user-consumer',
-        provider: 'user-provider',
-      });
-      pactTestDuration.observe(
-        {
-          test_type: 'consumer',
-          consumer: 'user-consumer',
-          provider: 'user-provider',
-        },
-        duration
-      );
+      await recordPactMetric('success', duration);
 
       logger.info('Consumer test passed: GET /api/users/:id (404)', {
         duration: `${duration.toFixed(3)}s`,
@@ -307,34 +281,16 @@ describe('User API Consumer Tests', () => {
         expect(response.data.email).toBe(newUser.email);
         expect(response.data.id).toBeDefined();
 
-        pactTestTotal.inc({
-          test_type: 'consumer',
-          status: 'success',
-          consumer: 'user-consumer',
-          provider: 'user-provider',
-        });
-        pactTestDuration.observe(
-          {
-            test_type: 'consumer',
-            consumer: 'user-consumer',
-            provider: 'user-provider',
-          },
-          duration
-        );
+        await recordPactMetric('success', duration);
 
         logger.info('Consumer test passed: POST /api/users', {
           duration: `${duration.toFixed(3)}s`,
           status: 'success',
         });
       } catch (error: any) {
-        pactTestTotal.inc({
-          test_type: 'consumer',
-          status: 'failure',
-          consumer: 'user-consumer',
-          provider: 'user-provider',
-        });
+        await recordPactMetric('failure');
         logger.error('Consumer test failed: POST /api/users', {
-          error: error.message,
+          error: error?.message || String(error),
         });
         throw error;
       }

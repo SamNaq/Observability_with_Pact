@@ -9,6 +9,7 @@ Complete documentation for the Demo Observability project.
 - **[VIEW_METRICS.md](./VIEW_METRICS.md)** - Complete guide to viewing metrics
 - **[VIEW_METRICS_NO_DOCKER.md](./VIEW_METRICS_NO_DOCKER.md)** - View metrics without Docker
 - **[TEST_AUTOMATION.md](./TEST_AUTOMATION.md)** - Automated contract test workflow for demos
+- **[GRAFANA_ALERTS.md](./GRAFANA_ALERTS.md)** - Configure alerts and demo intentional failures
 - **[PACT_CONTRACTS.md](./PACT_CONTRACTS.md)** - Understanding Pact contracts
 
 ## 🎯 Features
@@ -21,6 +22,9 @@ Complete documentation for the Demo Observability project.
   - Prometheus metrics collection
   - Grafana dashboards for visualization
 - **Automated Test Workflow**: GitHub Actions pipeline runs Pact consumer/provider checks and publishes Pact artifacts
+- **Smoke Integration Suite**: Lightweight API tests (`npm run test:integration`) emit `test_runs_total` metrics for dashboards
+- **Dashboard Panels**: Smoke outcomes, consumer/provider pass rates, and automation breakdown highlight testability data
+- **Coverage Metrics**: Jest coverage is pushed as `test_coverage_percent` and visualised alongside pass rates
 - **TypeScript/Node.js**: Modern, type-safe implementation
 - **Express APIs**: RESTful API services (Provider and Consumer)
 
@@ -75,6 +79,23 @@ npm run dev:provider
 # Then in another terminal:
 npm run test:provider
 ```
+
+**Smoke Integration Tests** (emits `test_runs_total` metrics for Grafana):
+```bash
+npm run test:integration
+```
+
+**Coverage Metrics**
+
+Coverage reports are generated automatically when running the individual suites. The coverage percentage is pushed via `scripts/report-coverage.js`:
+
+```bash
+npm run test:consumer
+npm run test:provider
+npm run test:integration
+```
+
+Each command reports its coverage to the provider service, which exposes `test_coverage_percent` for Grafana.
 
 **All Tests:**
 ```bash
@@ -232,7 +253,8 @@ cp .env.example .env
 1. **Consumer Tests**: Write consumer tests that define expected contracts
 2. **Generate Contracts**: Consumer tests generate contract files in `pact_contract/`
 3. **Provider Verification**: Run provider tests that verify against contracts
-4. **Monitor**: View metrics and logs
+4. **Smoke Integration**: Run `npm run test:integration` to validate live endpoints and update the `test_runs_total` metric
+5. **Monitor**: View metrics and logs
 
 ## 📈 Metrics Collected
 

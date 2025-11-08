@@ -16,7 +16,8 @@
 
 require('dotenv').config({ path: '.env.cloud' });
 const http = require('http');
-const https = require('https');
+const fetch = require('node-fetch').default;
+const { pushTimeseries } = require('prometheus-remote-write');
 
 // Grafana Cloud Prometheus remote write endpoint
 const PROMETHEUS_URL = process.env.GRAFANA_CLOUD_PROMETHEUS_URL;
@@ -40,44 +41,98 @@ async function fetchMetrics(url) {
   });
 }
 
-async function pushToGrafanaCloud(metrics) {
-  const urlObj = new URL(PROMETHEUS_URL);
-  
-  // For Grafana Cloud service accounts, use basic auth:
-  // Username: service account username
-  // Password: service account token
-  const auth = Buffer.from(`${USERNAME}:${API_TOKEN}`).toString('base64');
-  
-  const headers = {
-    'Content-Type': 'text/plain',  // Prometheus text format
-    'X-Prometheus-Remote-Write-Version': '0.1.0',
-    'Authorization': `Basic ${auth}`,  // Basic auth with service account username:token
-  };
-  
-  const options = {
-    hostname: urlObj.hostname,
-    port: urlObj.port || 443,
-    path: urlObj.pathname,
-    method: 'POST',
-    headers: headers,
-  };
+const METRIC_ALLOWLIST = [
+  /^http_requests_total/,
+  /^http_request_duration_seconds/,
+  /^test_runs_total/,
+  /^user_operations_total/,
+  /^pact_tests_total/,
+  /^pact_test_duration_seconds/,
+  /^pact_contracts_published_total/,
+  /^active_connections/,
+  /^test_coverage_percent/,
+];
 
-  return new Promise((resolve, reject) => {
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve({ status: res.statusCode, body: data });
-        } else {
-          reject(new Error(`HTTP ${res.statusCode}: ${data}`));
-        }
-      });
+function shouldIncludeMetric(name) {
+  return METRIC_ALLOWLIST.some((regex) => regex.test(name));
+}
+
+function parseLabels(labelString = '') {
+  const labels = {};
+  if (!labelString) return labels;
+
+  // Remove surrounding braces { ... }
+  const trimmed = labelString.replace(/^{|}$/g, '');
+  if (!trimmed.trim()) return labels;
+
+  const parts = trimmed.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
+  for (const part of parts) {
+    const [key, rawValue] = part.split('=');
+    if (!key || !rawValue) continue;
+    labels[key.trim()] = rawValue.trim().replace(/^"|"$/g, '').replace(/\\"/g, '"');
+  }
+  return labels;
+}
+
+function parseMetricsToTimeseries(metricsText) {
+  const lines = metricsText.split('\n');
+  const timeseries = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    const parts = trimmed.split(/\s+/);
+    if (parts.length < 2) continue;
+
+    const metricAndLabels = parts[0];
+    const value = Number(parts[1]);
+    if (Number.isNaN(value)) continue;
+
+    const match = metricAndLabels.match(/^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{.*\})?$/);
+    if (!match) continue;
+
+    const metricName = match[1];
+    if (!shouldIncludeMetric(metricName)) {
+      continue;
+    }
+
+    const labels = parseLabels(match[2] || '');
+
+    timeseries.push({
+      labels: {
+        __name__: metricName,
+        ...labels,
+      },
+      samples: [
+        {
+          value,
+          timestamp: Date.now(),
+        },
+      ],
     });
+  }
 
-    req.on('error', reject);
-    req.write(metrics);
-    req.end();
+  return timeseries;
+}
+
+async function pushToGrafanaCloud(timeseries) {
+  if (timeseries.length === 0) {
+    return;
+  }
+
+  await pushTimeseries(timeseries, {
+    url: PROMETHEUS_URL,
+    auth: {
+      username: USERNAME,
+      password: API_TOKEN,
+    },
+    headers: {
+      'X-Prometheus-Remote-Write-Version': '0.1.0',
+    },
+    fetch,
   });
 }
 
@@ -93,9 +148,10 @@ async function pushMetrics() {
     }
 
     const combinedMetrics = [consumerMetrics, providerMetrics].filter(Boolean).join('\n');
-    
+    const timeseries = parseMetricsToTimeseries(combinedMetrics);
+
     // Push to Grafana Cloud
-    await pushToGrafanaCloud(combinedMetrics);
+    await pushToGrafanaCloud(timeseries);
     
     const timestamp = new Date().toISOString();
     console.log(`✅ [${timestamp}] Metrics pushed successfully`);

@@ -4,12 +4,13 @@ dotenv.config();
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { logger } from '../src/utils/logger';
-import { register, activeConnections } from '../src/utils/metrics';
+import { register, activeConnections, testRunsTotal, testCoveragePercent } from '../src/utils/metrics';
 import { metricsMiddleware, errorHandler } from '../src/utils/middleware';
-import { userOperationsTotal } from '../src/utils/metrics';
+import { userOperationsTotal, pactTestTotal, pactTestDuration } from '../src/utils/metrics';
+import { Server } from 'http';
 
 const app = express();
-const PORT = process.env.PROVIDER_PORT || 3001;
+const DEFAULT_PORT = Number(process.env.PROVIDER_PORT || 3001);
 
 // Middleware
 app.use(cors());
@@ -185,13 +186,104 @@ app.delete('/api/users/:id', (req: Request, res: Response) => {
 // Error handling
 app.use(errorHandler);
 
-// Start server
-app.listen(PORT, () => {
-  logger.info(`🚀 User Provider API running on port ${PORT}`, {
-    port: PORT,
-    environment: process.env.NODE_ENV || 'development',
-  });
-  activeConnections.inc();
+// Internal endpoint to record automated test runs
+app.post('/internal/metrics/test-runs', (req: Request, res: Response) => {
+  const { suite = 'unknown', status = 'pass' } = req.body || {};
+
+  if (!['pass', 'fail'].includes(status)) {
+    return res.status(400).json({ error: 'status must be "pass" or "fail"' });
+  }
+
+  testRunsTotal.inc({ suite, status });
+  logger.info('Recorded test run result', { suite, status });
+  res.status(202).json({ recorded: true });
 });
+
+app.post('/internal/metrics/pact-tests', (req: Request, res: Response) => {
+  const {
+    testType = 'consumer',
+    status = 'success',
+    consumer = 'user-consumer',
+    provider = 'user-provider',
+    durationSeconds,
+  } = req.body || {};
+
+  if (!['consumer', 'provider'].includes(testType)) {
+    return res.status(400).json({ error: 'testType must be "consumer" or "provider"' });
+  }
+
+  if (!['success', 'failure'].includes(status)) {
+    return res.status(400).json({ error: 'status must be "success" or "failure"' });
+  }
+
+  pactTestTotal.inc({
+    test_type: testType,
+    status,
+    consumer,
+    provider,
+  });
+
+  if (typeof durationSeconds === 'number' && Number.isFinite(durationSeconds)) {
+    pactTestDuration.observe(
+      {
+        test_type: testType,
+        consumer,
+        provider,
+      },
+      durationSeconds
+    );
+  }
+
+  logger.info('Recorded pact test result', {
+    testType,
+    status,
+    durationSeconds,
+  });
+
+  res.status(202).json({ recorded: true });
+});
+
+app.post('/internal/metrics/test-coverage', (req: Request, res: Response) => {
+  const {
+    suite = 'unknown',
+    metric = 'lines',
+    value,
+  } = req.body || {};
+
+  const numericValue = Number(value);
+
+  if (!suite || typeof suite !== 'string') {
+    return res.status(400).json({ error: 'suite is required' });
+  }
+
+  if (!metric || typeof metric !== 'string') {
+    return res.status(400).json({ error: 'metric is required' });
+  }
+
+  if (!Number.isFinite(numericValue)) {
+    return res.status(400).json({ error: 'value must be a finite number' });
+  }
+
+  testCoveragePercent.labels({ suite, metric }).set(numericValue);
+  logger.info('Recorded coverage metric', { suite, metric, value: numericValue });
+
+  res.status(202).json({ recorded: true });
+});
+
+export function startServer(port: number = DEFAULT_PORT): Server {
+  const server = app.listen(port, () => {
+    logger.info(`🚀 User Provider API running on port ${port}`, {
+      port,
+      environment: process.env.NODE_ENV || 'development',
+    });
+    activeConnections.inc();
+  });
+
+  return server;
+}
+
+if (require.main === module) {
+  startServer(DEFAULT_PORT);
+}
 
 export default app;

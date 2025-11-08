@@ -27,8 +27,15 @@ npm run dev:provider    # Terminal 1
 npm run dev:consumer    # Terminal 2
 
 # 4. Run tests
-npm run test:consumer
-npm run test:provider
+npm run test:consumer      # Pact consumer contracts (reports coverage + metrics)
+npm run test:provider      # Pact provider verification (reports coverage + metrics)
+npm run test:integration   # Smoke integration suite (emits metrics + coverage)
+
+# or run everything
+npm test
+
+# Optional demo: trigger provider failure & alert
+# npm run test:provider:fail
 ```
 
 ## 📋 Project Structure
@@ -53,6 +60,7 @@ npm run test:provider
 - **Structured Logging** with Winston
 - **Prometheus Metrics** collection
 - **Grafana Dashboards** (optional, requires Docker)
+- **Automated Coverage Metrics** surfaced in Grafana via `test_coverage_percent`
 
 ## 📖 Full Documentation
 

@@ -1,10 +1,59 @@
 import { Verifier } from '@pact-foundation/pact';
-import { pactTestTotal, pactTestDuration } from '../../src/utils/metrics';
 import { logger } from '../../src/utils/logger';
 import path from 'path';
+import axios from 'axios';
+import { Server } from 'http';
+import { startServer as startProviderServer } from '../../provider/server';
 
 describe('User API Provider Verification', () => {
-  const providerBaseUrl = process.env.PROVIDER_URL || 'http://localhost:3001';
+  let providerServer: Server | null = null;
+  let providerBaseUrl = process.env.PROVIDER_URL || 'http://localhost:3001';
+  let metricsEndpoint = process.env.PACT_METRICS_URL || `${providerBaseUrl}/internal/metrics/pact-tests`;
+
+  beforeAll(async () => {
+    if (!process.env.PROVIDER_URL) {
+      providerServer = startProviderServer(0);
+      await new Promise((resolve) => providerServer!.once('listening', resolve));
+      const address = providerServer!.address();
+      const port =
+        typeof address === 'object' && address && typeof address.port === 'number'
+          ? address.port
+          : 3001;
+      providerBaseUrl = `http://127.0.0.1:${port}`;
+      metricsEndpoint = `${providerBaseUrl}/internal/metrics/pact-tests`;
+    }
+  });
+
+  afterAll(async () => {
+    if (providerServer) {
+      await new Promise((resolve, reject) =>
+        providerServer!.close((err) => (err ? reject(err) : resolve(null)))
+      );
+    }
+  });
+
+  async function recordPactMetric(
+    status: 'success' | 'failure',
+    durationSeconds?: number
+  ): Promise<void> {
+    try {
+      await axios.post(
+        metricsEndpoint,
+        {
+          testType: 'provider',
+          status,
+          consumer: 'user-consumer',
+          provider: 'user-provider',
+          durationSeconds,
+        },
+        { timeout: 2000 }
+      );
+    } catch (error: any) {
+      logger.warn('Unable to record provider pact metric', {
+        error: error?.message || String(error),
+      });
+    }
+  }
 
   it('should verify the provider against all consumer contracts', async () => {
     const testStart = Date.now();
@@ -20,10 +69,14 @@ describe('User API Provider Verification', () => {
     };
 
     // Optional: Use Pact Broker if URL is provided (requires Docker/cloud broker)
-    if (process.env.PACT_BROKER_URL) {
+    const brokerUrl = process.env.PACT_BROKER_URL;
+    const brokerUsername = process.env.PACT_BROKER_USERNAME;
+    const brokerPassword = process.env.PACT_BROKER_PASSWORD;
+
+    if (brokerUrl && brokerUsername && brokerPassword) {
       verifierOptions.pactBrokerUrl = process.env.PACT_BROKER_URL;
-      verifierOptions.pactBrokerUsername = process.env.PACT_BROKER_USERNAME;
-      verifierOptions.pactBrokerPassword = process.env.PACT_BROKER_PASSWORD;
+      verifierOptions.pactBrokerUsername = brokerUsername;
+      verifierOptions.pactBrokerPassword = brokerPassword;
       verifierOptions.publishVerificationResult = true;
       verifierOptions.providerVersion = process.env.PROVIDER_VERSION || '1.0.0';
       verifierOptions.consumerVersionSelectors = [
@@ -33,6 +86,12 @@ describe('User API Provider Verification', () => {
       ];
       // Remove pactUrls when using broker
       delete verifierOptions.pactUrls;
+    } else if (brokerUrl || brokerUsername || brokerPassword) {
+      logger.warn('Partial Pact Broker credentials detected. Falling back to local pact files.', {
+        hasUrl: Boolean(brokerUrl),
+        hasUsername: Boolean(brokerUsername),
+        hasPassword: Boolean(brokerPassword),
+      });
     }
 
     const verifier = new Verifier(verifierOptions);
@@ -43,20 +102,7 @@ describe('User API Provider Verification', () => {
 
       expect(output).toBeDefined();
 
-      pactTestTotal.inc({
-        test_type: 'provider',
-        status: 'success',
-        consumer: 'user-consumer',
-        provider: 'user-provider',
-      });
-      pactTestDuration.observe(
-        {
-          test_type: 'provider',
-          consumer: 'user-consumer',
-          provider: 'user-provider',
-        },
-        duration
-      );
+      await recordPactMetric('success', duration);
 
       logger.info('Provider verification passed', {
         duration: `${duration.toFixed(3)}s`,
@@ -65,20 +111,14 @@ describe('User API Provider Verification', () => {
       });
     } catch (error: any) {
       const duration = (Date.now() - testStart) / 1000;
-      pactTestTotal.inc({
-        test_type: 'provider',
-        status: 'failure',
-        consumer: 'user-consumer',
-        provider: 'user-provider',
-      });
-      pactTestDuration.observe(
-        {
-          test_type: 'provider',
-          consumer: 'user-consumer',
-          provider: 'user-provider',
-        },
-        duration
-      );
+      if (error?.pactMetrics) {
+        await recordPactMetric(
+          error.pactMetrics.status || 'failure',
+          error.pactMetrics.durationSeconds ?? duration
+        );
+      } else {
+        await recordPactMetric('failure', duration);
+      }
 
       logger.error('Provider verification failed', {
         error: error?.message || String(error),
